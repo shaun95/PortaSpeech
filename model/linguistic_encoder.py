@@ -154,7 +154,7 @@ class LinguisticEncoder(nn.Module):
                 idx_b += list(range(d_i))
             idx.append(torch.tensor(idx_b).to(device))
             # assert L[-1].shape == idx[-1].shape
-        return torch.div(pad(idx).to(device), pad(L).masked_fill(mask==0., 1.).to(device))
+        return torch.div(pad(idx).to(device), pad(L).masked_fill(mask == 0., 1.).to(device))
 
     def forward(
         self,
@@ -166,6 +166,7 @@ class LinguisticEncoder(nn.Module):
         src_w_mask,
         mel_mask=None,
         max_len=None,
+        attn_prior=None,
         duration_target=None,
         duration_control=1.0,
     ):
@@ -183,7 +184,8 @@ class LinguisticEncoder(nn.Module):
             1, 2), src_w_mask.unsqueeze(1)).transpose(1, 2)
 
         # Phoneme-level Duration Prediction
-        log_duration_p_prediction = self.duration_predictor(enc_p_out, src_p_mask)
+        log_duration_p_prediction = self.duration_predictor(
+            enc_p_out, src_p_mask)
 
         # Word-level Pooling
         log_duration_w_prediction = word_level_pooling(
@@ -223,8 +225,15 @@ class LinguisticEncoder(nn.Module):
         # q = self.add_position_enc(x)
         # k = self.add_position_enc(enc_p_out)
         # v = self.add_position_enc(enc_p_out)
-        x, alignment = self.w2p_attn(
-            q, k, v, key_mask=src_mask_, query_mask=mel_mask_, mapping_mask=mapping_mask, indivisual_attn=True
+        x, attn, attn_logprob = self.w2p_attn(
+            q=q,
+            k=k,
+            v=v,
+            key_mask=src_mask_,
+            query_mask=mel_mask_,
+            mapping_mask=mapping_mask,
+            indivisual_attn=True,
+            attn_prior=attn_prior,
         )
 
         return (
@@ -233,7 +242,8 @@ class LinguisticEncoder(nn.Module):
             duration_w_rounded,
             mel_len,
             mel_mask,
-            alignment,
+            attn,
+            attn_logprob,
         )
 
 

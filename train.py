@@ -128,7 +128,7 @@ def train(rank, args, configs, batch_size, num_gpus):
                     if step % log_step == 0:
                         losses = [l.item() for l in losses]
                         message1 = "Step {}/{}, ".format(step, total_step)
-                        message2 = "Total Loss: {:.4f}, Mel Loss: {:.4f}, KL Loss: {:.4f}, PN Loss: {:.4f}, Duration Loss: {:.4f}".format(
+                        message2 = "Total Loss: {:.4f}, Mel Loss: {:.4f}, KL Loss: {:.4f}, PN Loss: {:.4f}, Duration Loss: {:.4f}, CTC Loss: {:.4f}".format(
                             *losses
                         )
 

@@ -1,6 +1,7 @@
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class PortaSpeechLoss(nn.Module):
@@ -10,6 +11,7 @@ class PortaSpeechLoss(nn.Module):
         super(PortaSpeechLoss, self).__init__()
         self.mse_loss = nn.MSELoss()
         self.mae_loss = nn.L1Loss()
+        self.sum_loss = ForwardSumLoss()
 
     def kl_loss(self, z_p, logs_q, mask):
         """
@@ -47,7 +49,7 @@ class PortaSpeechLoss(nn.Module):
         (
             mel_targets,
             *_,
-        ) = inputs[10:]
+        ) = inputs[11:]
         (
             mel_predictions,
             postnet_outputs,
@@ -55,12 +57,13 @@ class PortaSpeechLoss(nn.Module):
             duration_roundeds,
             src_masks,
             mel_masks,
-            _,
-            _,
+            src_lens,
+            mel_lens,
             _,
             dist_info,
             src_w_masks,
             _,
+            alignment_logprobs,
         ) = predictions
         log_duration_targets = torch.log(duration_roundeds.float() + 1)
         mel_targets = mel_targets[:, : mel_masks.shape[1], :]
@@ -87,8 +90,13 @@ class PortaSpeechLoss(nn.Module):
         z, logdet = postnet_outputs
         postnet_loss = self.mle_loss(z, logdet, mel_masks.unsqueeze(1))
 
+        ctc_loss = torch.zeros(1).to(mel_targets.device)
+        for alignment_logprob in alignment_logprobs:
+            ctc_loss += self.sum_loss(alignment_logprob, src_lens, mel_lens)
+        ctc_loss = ctc_loss.mean()
+
         total_loss = (
-            mel_loss + kl_loss + postnet_loss + duration_loss
+            mel_loss + kl_loss + postnet_loss + duration_loss + ctc_loss
         )
 
         return (
@@ -97,4 +105,35 @@ class PortaSpeechLoss(nn.Module):
             kl_loss,  # L_KL
             postnet_loss,  # L_PN
             duration_loss,  # L_dur
+            ctc_loss,
         )
+
+
+class ForwardSumLoss(nn.Module):
+    def __init__(self, blank_logprob=-1):
+        super().__init__()
+        self.log_softmax = nn.LogSoftmax(dim=3)
+        self.ctc_loss = nn.CTCLoss(zero_infinity=True)
+        self.blank_logprob = blank_logprob
+
+    def forward(self, attn_logprob, in_lens, out_lens):
+        key_lens = in_lens
+        query_lens = out_lens
+        attn_logprob_padded = F.pad(input=attn_logprob, pad=(1, 0), value=self.blank_logprob)
+
+        total_loss = 0.0
+        for bid in range(attn_logprob.shape[0]):
+            target_seq = torch.arange(1, key_lens[bid] + 1).unsqueeze(0)
+            curr_logprob = attn_logprob_padded[bid].permute(1, 0, 2)[: query_lens[bid], :, : key_lens[bid] + 1]
+
+            curr_logprob = self.log_softmax(curr_logprob[None])[0]
+            loss = self.ctc_loss(
+                curr_logprob,
+                target_seq,
+                input_lengths=query_lens[bid : bid + 1],
+                target_lengths=key_lens[bid : bid + 1],
+            )
+            total_loss += loss
+
+        total_loss /= attn_logprob.shape[0]
+        return total_loss

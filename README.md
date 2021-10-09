@@ -120,7 +120,8 @@ to serve TensorBoard on your localhost.
 # Notes
 
 - For vocoder, **HiFi-GAN** and **MelGAN** are supported.
-- No ReLU activation and LayerNorm in **VariationalGenerator** for the convergence of word-to-phoneme alignment of **LinguisticEncoder**.
+- No ReLU activation and LayerNorm in **VariationalGenerator** to avoid mashed output.
+- Add CTC Loss with forward-sum algorithm to improve convergence speed of word-to-phoneme alignment in **LinguisticEncoder**.
 - Will be extended to a **multi-speaker TTS**.
 <!-- - Two options for embedding for the **multi-speaker TTS** setting: training speaker embedder from scratch or using a pre-trained [philipperemy's DeepSpeaker](https://github.com/philipperemy/deep-speaker) model (as [STYLER](https://github.com/keonlee9420/STYLER) did). You can toggle it by setting the config (between `'none'` and `'DeepSpeaker'`).
 - DeepSpeaker on VCTK dataset shows clear identification among speakers. The following figure shows the T-SNE plot of extracted speaker embedding.
@@ -137,3 +138,4 @@ Please cite this repository by the "[Cite this repository](https://github.blog/2
 - [jaywalnut310's VITS](https://github.com/jaywalnut310/vits)
 - [jaywalnut310's Glow-TTS](https://github.com/jaywalnut310/glow-tts)
 - [keonlee9420's VAENAR-TTS](https://github.com/keonlee9420/VAENAR-TTS)
+- [keonlee9420's Comprehensive-Transformer-TTS](https://github.com/keonlee9420/Comprehensive-Transformer-TTS)

@@ -7,6 +7,7 @@ import tgt
 import librosa
 import numpy as np
 import pyworld as pw
+from scipy.stats import betabinom
 from scipy.interpolate import interp1d
 from sklearn.preprocessing import StandardScaler
 from tqdm import tqdm
@@ -28,6 +29,7 @@ class Preprocessor:
         self.val_size = preprocess_config["preprocessing"]["val_size"]
         self.sampling_rate = preprocess_config["preprocessing"]["audio"]["sampling_rate"]
         self.hop_length = preprocess_config["preprocessing"]["stft"]["hop_length"]
+        self.beta_binomial_scaling_factor = preprocess_config["preprocessing"]["aligner"]["beta_binomial_scaling_factor"]
 
         self.STFT = Audio.stft.TacotronSTFT(
             preprocess_config["preprocessing"]["stft"]["filter_length"],
@@ -70,6 +72,7 @@ class Preprocessor:
         os.makedirs((os.path.join(self.out_dir, "duration")), exist_ok=True)
         os.makedirs(
             (os.path.join(self.out_dir, "phones_per_word")), exist_ok=True)
+        os.makedirs((os.path.join(self.out_dir, "attn_prior")), exist_ok=True)
         os.makedirs(embedding_dir, exist_ok=True)
 
         print("Processing Data ...")
@@ -204,9 +207,19 @@ class Preprocessor:
         mel_spectrogram, _ = Audio.tools.get_mel_from_wav(wav, self.STFT)
         mel_spectrogram = mel_spectrogram[:, : sum(duration)]
 
+        # Compute alignment prior
+        attn_prior = self.beta_binomial_prior_distribution(
+            mel_spectrogram.shape[1],
+            len(duration),
+            self.beta_binomial_scaling_factor,
+        )
+
         # Save files
         dur_filename = "{}-duration-{}.npy".format(speaker, basename)
         np.save(os.path.join(self.out_dir, "duration", dur_filename), duration)
+
+        attn_prior_filename = "{}-attn_prior-{}.npy".format(speaker, basename)
+        np.save(os.path.join(self.out_dir, "attn_prior", attn_prior_filename), attn_prior)
 
         phones_per_word_filename = "{}-phones_per_word-{}.npy".format(
             speaker, basename)
@@ -224,6 +237,17 @@ class Preprocessor:
             mel_spectrogram.shape[1],
             spker_embed,
         )
+
+    def beta_binomial_prior_distribution(self, phoneme_count, mel_count, scaling_factor=1.0):
+        P, M = phoneme_count, mel_count
+        x = np.arange(0, P)
+        mel_text_probs = []
+        for i in range(1, M+1):
+            a, b = scaling_factor*i, scaling_factor*(M+1-i)
+            rv = betabinom(P, a, b)
+            mel_i_prob = rv.pmf(x)
+            mel_text_probs.append(mel_i_prob)
+        return np.array(mel_text_probs)
 
     def get_alignment(self, tier_p, tier_w):
         sil_phones = ["sil", "sp", "spn"]
